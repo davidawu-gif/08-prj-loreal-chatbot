@@ -3,16 +3,120 @@ const chatForm = document.getElementById("chatForm");
 const userInput = document.getElementById("userInput");
 const chatWindow = document.getElementById("chatWindow");
 
-// Set initial message
-chatWindow.textContent = "👋 Hello! How can I help you today?";
+// Cloudflare Worker endpoint URL
+const CLOUDFLARE_WORKER_URL = "https://forproj.pandawu2005.workers.dev/";
+
+// System prompt for L'Oréal chatbot
+const SYSTEM_PROMPT = `You are a knowledgeable L'Oréal product expert and beauty advisor. You help customers find the right L'Oréal products for their needs, provide beauty routines and tips, and answer questions about L'Oréal's skincare, haircare, and cosmetics lines.
+
+You should:
+- Only answer questions related to L'Oréal products, beauty routines, skincare, haircare, cosmetics, and beauty advice
+- Be friendly, professional, and helpful
+- Provide specific product recommendations when appropriate
+- Politely decline to answer questions unrelated to L'Oréal or beauty topics
+
+If a question is outside these topics, respond with: "I'm here to help you with L'Oréal products and beauty advice. Please ask me something related to our product lines or beauty routines!"`;
+
+// Store conversation history (including system prompt)
+let messageHistory = [];
+
+// Display initial greeting
+const initialMessage = document.createElement("div");
+initialMessage.className = "msg ai";
+initialMessage.textContent =
+  "👋 Hello! I'm your L'Oréal Smart Product Advisor. Ask me anything about our products, routines, or beauty tips!";
+chatWindow.appendChild(initialMessage);
 
 /* Handle form submit */
-chatForm.addEventListener("submit", (e) => {
+chatForm.addEventListener("submit", async (e) => {
   e.preventDefault();
 
-  // When using Cloudflare, you'll need to POST a `messages` array in the body,
-  // and handle the response using: data.choices[0].message.content
+  const userMessage = userInput.value.trim();
 
-  // Show message
-  chatWindow.innerHTML = "Connect to the OpenAI API for a response!";
+  if (!userMessage) return;
+
+  // Display user message
+  const userMessageElement = document.createElement("div");
+  userMessageElement.className = "msg user";
+  userMessageElement.textContent = `You: ${userMessage}`;
+  chatWindow.appendChild(userMessageElement);
+
+  // Clear input field
+  userInput.value = "";
+
+  // Scroll to latest message
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+
+  try {
+    // Add user message to history
+    messageHistory.push({
+      role: "user",
+      content: userMessage,
+    });
+
+    // Prepare messages array with system prompt
+    const messages = [
+      {
+        role: "system",
+        content: SYSTEM_PROMPT,
+      },
+      ...messageHistory,
+    ];
+
+    // Show loading indicator
+    const loadingMessage = document.createElement("div");
+    loadingMessage.className = "msg ai";
+    loadingMessage.textContent = "Thinking...";
+    chatWindow.appendChild(loadingMessage);
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+
+    // Send request to Cloudflare Worker
+    const response = await fetch(CLOUDFLARE_WORKER_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ messages }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    // Remove loading indicator
+    chatWindow.removeChild(loadingMessage);
+
+    // Extract AI response
+    const aiMessage = data.choices[0].message.content;
+
+    // Add AI message to chat window
+    const aiMessageElement = document.createElement("div");
+    aiMessageElement.className = "msg ai";
+    aiMessageElement.textContent = `Advisor: ${aiMessage}`;
+    chatWindow.appendChild(aiMessageElement);
+
+    // Add AI response to history
+    messageHistory.push({
+      role: "assistant",
+      content: aiMessage,
+    });
+
+    // Scroll to latest message
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+  } catch (error) {
+    // Remove loading indicator if exists
+    const loadingMsg = chatWindow.querySelector(".msg.ai");
+    if (loadingMsg && loadingMsg.textContent === "Thinking...") {
+      chatWindow.removeChild(loadingMsg);
+    }
+
+    // Display error message
+    const errorMessage = document.createElement("div");
+    errorMessage.className = "msg ai";
+    errorMessage.textContent = `Error: ${error.message}. Please try again.`;
+    chatWindow.appendChild(errorMessage);
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+  }
 });
